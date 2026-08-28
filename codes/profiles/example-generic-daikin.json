@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "brand": "Daikin",
+  "model": "FTXS-series (example)",
+  "protocol": "DAIKIN",
+  "protocolModel": -1,
+  "useLearnedCodes": false,
+  "minTemp": 18,
+  "maxTemp": 32,
+  "tempStep": 1,
+  "carrierKhz": 38,
+  "notes": "Reference entry showing the shape of a protocol-based profile. Because the protocol is known to IRremoteESP8266, no raw codes are needed at all — the bridge synthesises every command.",
+  "codes": []
+}
