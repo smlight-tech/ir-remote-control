@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "updated": "2026-08-04",
+  "note": "Index of community-contributed air-conditioner profiles. The web interface fetches this file directly from the browser, so it must stay small: keep per-profile detail in the profile file itself.",
+  "profiles": [
+    {
+      "id": "example-generic-daikin",
+      "brand": "Daikin",
+      "model": "FTXS-series (example)",
+      "protocol": "DAIKIN",
+      "file": "profiles/example-generic-daikin.json",
+      "codes": 0,
+      "contributor": "project",
+      "verified": false
+    }
+  ]
+}
