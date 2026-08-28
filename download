@@ -1,0 +1,22 @@
+# Line endings are decided here rather than by whoever happens to be checking
+# the repository out.
+#
+# Everything text is stored with LF and checked out with LF, on every platform.
+# Without this, editing a file on Windows quietly rewrote every line in it, so
+# a three-line change arrived as a two-hundred-line diff and real edits were
+# impossible to find in a review.
+* text=auto eol=lf
+
+# Things that are not text, and must never have their bytes rearranged.
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.pdf    binary
+*.bin    binary
+*.gz     binary
+*.zip    binary
+*.step   binary
+*.woff   binary
+*.woff2  binary
