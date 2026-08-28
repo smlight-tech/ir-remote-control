@@ -1,0 +1,635 @@
+/* SLWF-12 web interface.
+   No framework, no build step: the whole UI has to fit in an ESP8266's
+   filesystem and be served over a single-threaded async web server, so every
+   byte here is one the device has to store and push. */
+
+/* Themes.
+   A tiny inline script in <head> resolves "auto" against the system setting and
+   always writes a concrete data-theme, so the palettes live in exactly one
+   place each rather than being repeated inside a prefers-color-scheme query.
+   The bare :root selector is the belt-and-braces case: if scripting fails
+   entirely, the interface is still legible. */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #eceef2;
+  --surface: #ffffff;
+  --surface-2: #f4f6f9;
+  --line: #d5dae3;
+  --text: #12151b;
+  --muted: #626b7a;
+  --accent: #1f6fb8;
+  --cool: #2b8fc9;
+  --heat: #cf5f22;
+  --dry: #1d907f;
+  --fan: #6b7686;
+  --auto: #6a56c4;
+  --danger: #c4362c;
+  --ok: #24864a;
+  --shadow: none;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0a0c0f;
+  --surface: #101318;
+  --surface-2: #171b22;
+  --line: #262c36;
+  --text: #dce1ea;
+  --muted: #838d9d;
+  --accent: #4d97e8;
+  --cool: #48a5da;
+  --heat: #e07a42;
+  --dry: #3fbfad;
+  --fan: #8a95a6;
+  --auto: #9a83e0;
+  --danger: #e05a50;
+  --ok: #3fae66;
+  --shadow: none;
+}
+
+:root {
+  /* Square enough to read as equipment. One radius everywhere: a panel with
+     three different corner treatments looks decorated, not built. */
+  --radius: 3px;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Menlo,
+          Consolas, monospace;
+}
+
+/* Only animate the swap when the user asks for it, so first paint is instant
+   and a system theme change does not strobe. */
+:root[data-theme-animating] * {
+  transition: background-color .2s ease, color .2s ease, border-color .2s ease;
+}
+
+* { box-sizing: border-box; }
+
+/* Any class that sets `display` out-specifies the user agent's [hidden] rule,
+   so an element told to hide would stay on screen. Several components here set
+   display: flex and are toggled with .hidden — this keeps the attribute
+   authoritative rather than leaving each one to remember. */
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  padding: 0 0 3.4rem;   /* clears the fixed footer */
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Headings label a panel rather than announce a chapter: small, spaced, and
+   the same weight as the rest, so the eye goes to the readings. */
+h2, h3, h4 {
+  text-transform: uppercase; letter-spacing: .1em; font-weight: 600;
+  color: var(--text);
+}
+h2 { font-size: .8rem; margin: 0 0 .5rem; }
+h3 { font-size: .74rem; margin: 0 0 .5rem; color: var(--muted); }
+h4 { font-size: .7rem; margin: .9rem 0 .35rem; color: var(--muted); }
+p  { margin: .35rem 0 .8rem; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 1rem 0; }
+code { background: var(--surface-2); padding: .1em .35em; border-radius: 2px;
+       font-family: var(--mono); font-size: .88em; }
+
+.muted { color: var(--muted); }
+.small { font-size: .85rem; }
+
+/* ── boot veil ─────────────────────────────────────────────────────────── */
+.boot {
+  position: fixed; inset: 0; z-index: 50;
+  display: grid; place-items: center;
+  background: var(--bg);
+  transition: opacity .25s;
+}
+.boot.gone { opacity: 0; pointer-events: none; }
+.spinner {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 3px solid var(--line); border-top-color: var(--accent);
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── chrome ────────────────────────────────────────────────────────────── */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: .75rem;
+  padding: max(.7rem, env(safe-area-inset-top)) 1rem .7rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 20;
+}
+.brand { display: flex; align-items: center; gap: .55rem; font-size: 1rem; }
+.dot {
+  width: 8px; height: 8px; border-radius: 1px;
+  background: var(--muted); transition: background .3s;
+}
+.dot.online { background: var(--ok); }
+.dot.offline { background: var(--danger); }
+
+.topbar-actions { display: flex; align-items: center; gap: .55rem; }
+
+/* The device's time, not this browser's. Tabular figures so it does not
+   twitch, and dimmed when the device has no idea what time it is. */
+.clock-now {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: .82rem; color: var(--text); cursor: default;
+}
+.clock-now.unset { color: var(--muted); opacity: .6; }
+.topbar-actions select {
+  background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: .3rem .5rem; font-size: .85rem;
+}
+/* Shows which language is on, and goes to the page where that is changed. */
+.lang-button {
+  min-width: 34px; height: 34px; padding: 0 .5rem;
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--radius); color: var(--muted);
+  font-family: var(--mono); font-size: .74rem; letter-spacing: .06em;
+  cursor: pointer;
+}
+.lang-button:hover { color: var(--text); }
+
+.theme-toggle {
+  width: 34px; height: 34px; padding: 0;
+  display: grid; place-items: center;
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--radius); color: var(--muted); cursor: pointer;
+}
+.theme-toggle svg { width: 17px; height: 17px; fill: none; stroke: currentColor;
+                    stroke-width: 1.8; stroke-linecap: round; }
+.theme-toggle:hover { color: var(--text); }
+/* One icon per mode; the script reveals the active one. */
+.theme-toggle [data-icon] { display: none; }
+:root[data-theme-choice="auto"]  .theme-toggle [data-icon="auto"],
+:root[data-theme-choice="light"] .theme-toggle [data-icon="light"],
+:root[data-theme-choice="dark"]  .theme-toggle [data-icon="dark"] { display: block; }
+
+.tabs {
+  display: flex; gap: .25rem; overflow-x: auto;
+  padding: .5rem 1rem; background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  position: sticky; top: 51px; z-index: 19;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  flex: 0 0 auto;
+  background: transparent; color: var(--muted);
+  border: 0; border-radius: 0; border-bottom: 2px solid transparent;
+  padding: .35rem .7rem; font-size: .78rem; cursor: pointer;
+  text-transform: uppercase; letter-spacing: .09em; white-space: nowrap;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+
+main { max-width: 720px; margin: 0 auto; padding: 1rem; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: .9rem 1rem 1rem;
+  margin-bottom: .75rem;
+}
+
+/* ── climate card ──────────────────────────────────────────────────────── */
+.climate { text-align: center; }
+.climate-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: .5rem;
+}
+.climate-title { font-weight: 600; font-size: .82rem;
+                 text-transform: uppercase; letter-spacing: .1em; }
+.pill {
+  font-size: .68rem; text-transform: uppercase; letter-spacing: .08em;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 2px; padding: .12rem .4rem;
+}
+
+.dial-wrap {
+  position: relative; width: 236px; height: 236px;
+  margin: .25rem auto .5rem;
+}
+.dial { width: 100%; height: 100%; transform: rotate(135deg); }
+.dial-track, .dial-fill {
+  fill: none; stroke-width: 8; stroke-linecap: butt;
+  /* 270° of a 2πr = 540.35 circumference */
+  stroke-dasharray: 405 540;
+}
+.dial-track { stroke: var(--line); }
+.dial-fill {
+  stroke: var(--fan);
+  stroke-dasharray: 0 540;
+  opacity: 0;
+  transition: stroke-dasharray .35s ease, stroke .35s ease, opacity .25s ease;
+}
+
+.dial-centre {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+/* A reading, so: monospace, tabular figures, and a fixed width — the number
+   must not shuffle sideways every time it changes. */
+.temp {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 2.9rem; font-weight: 400; line-height: 1; letter-spacing: -.03em;
+}
+.temp-unit { font-size: .8rem; color: var(--muted); margin-top: .15rem;
+             font-family: var(--mono); }
+.dial-mode {
+  font-size: .68rem; color: var(--muted); text-transform: uppercase;
+  letter-spacing: .14em; margin-top: .55rem;
+}
+
+.dial-step {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  width: 40px; height: 34px; border-radius: var(--radius);
+  background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--line);
+  font-size: 1.1rem; line-height: 1; cursor: pointer;
+}
+.dial-step:active { background: var(--accent); color: #fff; }
+.dial-step.up { top: 0; }
+.dial-step.down { bottom: 0; }
+
+.power {
+  width: 46px; height: 40px; border-radius: var(--radius);
+  border: 1px solid var(--line); background: var(--surface-2);
+  color: var(--muted); cursor: pointer; margin: .25rem 0 .9rem;
+}
+.power svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.power.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.chip-row {
+  display: flex; flex-wrap: wrap; gap: .4rem; justify-content: center;
+  margin-bottom: .5rem;
+}
+.chip {
+  background: var(--surface-2); color: var(--muted);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: .32rem .7rem; font-size: .74rem; cursor: pointer;
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.chip:hover { color: var(--text); }
+.chip-row.small .chip { padding: .26rem .55rem; font-size: .68rem; }
+.chip.active { color: #fff; border-color: transparent; }
+.chip.active[data-mode="cool"]     { background: var(--cool); }
+.chip.active[data-mode="heat"]     { background: var(--heat); }
+.chip.active[data-mode="dry"]      { background: var(--dry); }
+.chip.active[data-mode="fan_only"] { background: var(--fan); }
+.chip.active[data-mode="auto"]     { background: var(--auto); }
+.chip.active[data-fan], .chip.active[data-swing] { background: var(--accent); }
+
+.scene-block {
+  margin: .5rem 0 .1rem; padding-top: .8rem;
+  border-top: 1px solid var(--line);
+}
+.row-label {
+  display: block; margin-bottom: .45rem;
+  font-size: .64rem; text-transform: uppercase; letter-spacing: .12em;
+  color: var(--muted);
+}
+.scene-row { margin-bottom: 0; }
+.scene-row .chip { padding: .42rem .85rem; }
+.scene-row .chip.active { background: var(--accent); color: #fff; border-color: transparent; }
+
+.hold-notice {
+  background: color-mix(in srgb, var(--heat) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--heat) 45%, transparent);
+  border-left-width: 3px; color: var(--text);
+  border-radius: var(--radius); padding: .45rem .7rem; margin: 0 0 .7rem;
+  font-size: .8rem;
+}
+
+.stat-row {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: .55rem; margin: .7rem 0 .4rem;
+}
+.tile {
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: .55rem .65rem;
+}
+.tile .value {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 1.15rem; font-weight: 500; line-height: 1.2;
+}
+.tile .label {
+  font-size: .66rem; color: var(--muted); margin-top: .25rem;
+  text-transform: uppercase; letter-spacing: .08em;
+}
+
+.climate-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  border-top: 1px solid var(--line); margin-top: .6rem; padding-top: .6rem;
+  font-family: var(--mono); font-size: .74rem;
+}
+
+/* ── forms and buttons ─────────────────────────────────────────────────── */
+button {
+  font: inherit; font-size: .82rem; border-radius: var(--radius);
+  cursor: pointer; padding: .42rem .8rem;
+  border: 1px solid var(--line);
+  background: var(--surface-2); color: var(--text);
+}
+button:hover:not(:disabled) { border-color: var(--muted); }
+button:disabled { opacity: .45; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.ghost { background: transparent; }
+button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+button.danger.ghost { background: transparent; color: var(--danger); }
+
+.btn-row { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .8rem; align-items: center; }
+
+.field-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: .6rem; margin: .6rem 0;
+}
+.field-row { display: flex; gap: .5rem; margin: .6rem 0; flex-wrap: wrap; }
+.field-row > input, .field-row > select { flex: 1 1 160px; }
+
+label > span {
+  display: block; font-size: .68rem; color: var(--muted); margin-bottom: .25rem;
+  text-transform: uppercase; letter-spacing: .07em;
+}
+input, select, textarea {
+  width: 100%; font: inherit;
+  background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: .45rem .55rem; font-size: .88rem;
+}
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+.switch { display: flex; align-items: center; gap: .55rem; margin: .45rem 0; cursor: pointer; }
+.switch input { width: auto; accent-color: var(--accent); }
+.switch span { margin: 0; font-size: .9rem; color: var(--text); }
+
+.toggle-list .switch {
+  border-bottom: 1px solid var(--line); padding: .55rem 0; margin: 0;
+}
+.toggle-list .switch span:first-of-type { flex: 1; }
+.tag {
+  font-size: .7rem; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); background: transparent;
+  border: 1px solid var(--line); border-radius: 2px;
+  padding: .1rem .4rem; white-space: nowrap;
+}
+.toggle-list .switch:last-child { border-bottom: 0; }
+
+/* ── lists ─────────────────────────────────────────────────────────────── */
+.list { margin: .5rem 0; }
+.row {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .5rem .1rem; border-bottom: 1px solid var(--line);
+  font-size: .9rem;
+}
+.row:last-child { border-bottom: 0; }
+/* A name is the thing you scan a list by, so it does not give up its width
+   to the fields beside it. */
+.row .grow { flex: 1; min-width: 7rem; overflow: hidden; text-overflow: ellipsis; }
+.row button { padding: .3rem .6rem; font-size: .8rem; }
+/* The one per-device string a family may need — a MAC, an entity id. */
+.row-extra {
+  width: auto; flex: 0 1 12rem; min-width: 5rem;
+  font-family: var(--mono); font-size: .78rem; padding: .25rem .4rem;
+}
+
+.regmap {
+  width: 100%; border-collapse: collapse; margin: .6rem 0;
+  font-size: .8rem;
+}
+.regmap th, .regmap td {
+  text-align: left; padding: .3rem .5rem;
+  border-bottom: 1px solid var(--line);
+}
+.regmap th { color: var(--muted); font-weight: 500; }
+.regmap td:first-child { font-family: var(--mono); color: var(--accent); }
+
+.kv {
+  display: grid; grid-template-columns: auto 1fr; gap: .25rem .9rem;
+  margin: .7rem 0 0; font-size: .8rem;
+}
+.kv dt {
+  color: var(--muted); font-size: .68rem; text-transform: uppercase;
+  letter-spacing: .07em; align-self: center;
+}
+/* Values are data — monospace so columns line up and a changed digit is
+   obvious at a glance. */
+.kv dd {
+  margin: 0; overflow-wrap: anywhere;
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+}
+
+/* ── wizard ────────────────────────────────────────────────────────────── */
+.wizard {
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: .8rem; margin: .8rem 0;
+}
+.wizard-phase { display: flex; justify-content: space-between; align-items: center; }
+.wizard-prompt { font-size: 1rem; margin: .6rem 0 .2rem; }
+.wizard-target { font-family: var(--mono); color: var(--accent); margin: 0; }
+.wizard-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .7rem; }
+
+/* ── log ───────────────────────────────────────────────────────────────── */
+.log {
+  background: #0a0c10; color: #cfd6e4;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: .6rem; margin: .5rem 0 0;
+  height: 320px; overflow: auto;
+  font: 11.5px/1.5 var(--mono);
+  white-space: pre-wrap; word-break: break-word;
+}
+.log .e { color: #ff7b72; }
+.log .w { color: #f0c674; }
+.log .d { color: var(--muted); }
+
+.progress { height: 4px; background: var(--surface-2); border-radius: 0; overflow: hidden; margin: .6rem 0; }
+.progress > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+
+.danger-zone { border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+
+/* ── toasts ────────────────────────────────────────────────────────────── */
+.toasts {
+  position: fixed; left: 50%; bottom: 3.6rem; transform: translateX(-50%);
+  display: flex; flex-direction: column; gap: .4rem; z-index: 40;
+  width: min(92vw, 420px);
+}
+.toast {
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius); padding: .55rem .8rem; font-size: .85rem;
+  animation: rise .2s ease;
+}
+.toast.error { border-left-color: var(--danger); }
+.toast.ok { border-left-color: var(--ok); }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+
+@media (max-width: 420px) {
+  .dial-wrap { width: 210px; height: 210px; }
+  .temp { font-size: 3rem; }
+}
+
+/* ── device tabs and generated device cards ─────────────────────────────── */
+/* Wraps rather than scrolls. Scrolling clipped the group boxes mid-border and
+   cut their labels off — with a handful of paired devices a second row is
+   simply better than a hidden one. */
+.device-tabs {
+  display: flex; flex-wrap: wrap; gap: .4rem;
+  padding-bottom: .5rem; margin-bottom: .25rem;
+}
+.device-tab {
+  flex: 0 0 auto; display: flex; align-items: center; gap: .4rem;
+  background: var(--surface); color: var(--muted);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: .38rem .7rem; font-size: .78rem; cursor: pointer; white-space: nowrap;
+  text-transform: uppercase; letter-spacing: .07em;
+}
+.device-tab:hover { color: var(--text); }
+.device-tab.active {
+  background: var(--surface-2); color: var(--text); border-color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.device-tab.offline { opacity: .55; }
+.device-icon { font-size: 1rem; }
+
+.action-row {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .6rem 0; border-bottom: 1px solid var(--line);
+}
+.action-row:last-child { border-bottom: 0; }
+.action-row.column { flex-direction: column; align-items: stretch; gap: .35rem; }
+.action-label { flex: 1; font-size: .9rem; }
+.action-value {
+  min-width: 3.5rem; text-align: center; font-size: .95rem;
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+}
+
+/* ── automation rules ──────────────────────────────────────────────────── */
+.rule { box-shadow: none; margin: .6rem 0; }
+.rule-part { margin-top: .7rem; }
+.rule-heading {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  margin-bottom: .4rem;
+}
+.rule-word {
+  font-family: var(--mono); font-size: .68rem; font-weight: 600;
+  letter-spacing: .12em; color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 2px; padding: .1rem .4rem;
+}
+.rule-line {
+  display: flex; gap: .4rem; align-items: center; flex-wrap: wrap;
+  margin-bottom: .35rem;
+}
+.rule-line select, .rule-line input { flex: 1 1 7rem; min-width: 0; padding: .35rem .5rem; font-size: .85rem; }
+.small-btn { padding: .25rem .6rem; font-size: .8rem; }
+
+/* ── device strip: this device, and the paired ones ─────────────────────── */
+.device-tabs { align-items: flex-start; gap: .75rem; padding-top: .65rem; }
+.device-group {
+  position: relative; flex: 0 1 auto; max-width: 100%; min-width: 0;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: .5rem .55rem .45rem;
+}
+.device-group-label {
+  position: absolute; top: -.6rem; right: .7rem;
+  background: var(--bg); padding: 0 .35rem;
+  font-size: .66rem; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--muted); white-space: nowrap;
+}
+.device-group-tabs { display: flex; flex-wrap: wrap; gap: .4rem; }
+
+/* ── section rail ───────────────────────────────────────────────────────
+ *
+ * Destinations with more than one page get a menu down the side. It replaces a
+ * landing page you had to go back out of: every page of a section is one click
+ * away from every other, and the current one is always in view.
+ *
+ * The rail is the grid's first column and spans every row, so the visible page
+ * — the only sibling that is not display:none — sits beside it. */
+main.railed {
+  display: grid; grid-template-columns: 12rem minmax(0, 1fr);
+  gap: 1.25rem; max-width: 980px;
+}
+main.railed > .rail { grid-column: 1; grid-row: 1 / -1; }
+main.railed > .view { grid-column: 2; }
+
+.rail {
+  display: flex; flex-direction: column; gap: .15rem;
+  align-self: start; position: sticky; top: .75rem;
+}
+.rail-item {
+  display: flex; align-items: center; gap: .6rem; width: 100%;
+  background: transparent; border: 0; border-radius: var(--radius);
+  padding: .45rem .65rem; text-align: left; cursor: pointer;
+  color: var(--muted); font-size: .78rem; line-height: 1.3;
+  text-transform: uppercase; letter-spacing: .07em;
+}
+.rail-item:hover { background: var(--surface); color: var(--text); }
+.rail-item.active {
+  background: var(--surface); color: var(--text); font-weight: 500;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.rail-icon { font-size: 1rem; width: 1.2rem; text-align: center; flex: 0 0 auto; }
+
+
+/* Not enough width for a column: the rail becomes a strip above the page. */
+@media (max-width: 700px) {
+  main.railed { display: block; }
+  .rail {
+    flex-direction: row; position: static; gap: .3rem;
+    overflow-x: auto; padding-bottom: .6rem; margin-bottom: .3rem;
+    scrollbar-width: none;
+  }
+  .rail::-webkit-scrollbar { display: none; }
+  .rail-item { width: auto; flex: 0 0 auto; white-space: nowrap; }
+  .rail-item.active { box-shadow: inset 0 -2px 0 var(--accent); }
+}
+
+/* ── icons ─────────────────────────────────────────────────────────────── */
+svg.icon, .rail-icon, .device-icon, .row-icon, .card-icon {
+  width: 15px; height: 15px; flex: 0 0 auto;
+  fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.rail-icon { width: 14px; height: 14px; opacity: .85; }
+.card-icon { width: 14px; height: 14px; margin-right: .45rem;
+             vertical-align: -2px; }
+.row-icon { color: var(--muted); }
+
+/* ── footer ────────────────────────────────────────────────────────────── */
+/* Pinned to the bottom the way the tab bar is pinned to the top, and full
+   width like it: this is chrome, not the end of the page. Fixed rather than
+   sticky so a short page still shows it where it belongs — body reserves the
+   height it takes. */
+.footer {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 18;
+  padding: .5rem 1rem max(.5rem, env(safe-area-inset-bottom));
+  background: var(--surface); border-top: 1px solid var(--line);
+  display: flex; flex-wrap: wrap; gap: .3rem 1.5rem;
+  align-items: center; justify-content: space-between;
+  font-size: .7rem; color: var(--muted);
+}
+
+.footer-facts { display: flex; flex-wrap: wrap; gap: .25rem 1.4rem; }
+.footer-fact { display: flex; align-items: baseline; gap: .45rem; }
+.footer-label { text-transform: uppercase; letter-spacing: .08em; }
+.footer-value {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.footer-links { display: flex; align-items: center; gap: .9rem; }
+.footer-links a { display: flex; color: var(--muted); text-decoration: none; }
+.footer-links a:hover { color: var(--accent); }
+.footer-text-link {
+  font-size: .7rem; text-transform: uppercase; letter-spacing: .08em;
+}
+
+/* A heading's own status line — "working", "switched off". */
+.summary-note {
+  margin-left: .6rem; font-weight: 400; font-size: .8rem; color: var(--muted);
+}

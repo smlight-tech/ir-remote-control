@@ -1,0 +1,619 @@
+{
+  "schema": 1,
+  "updated": "2026-08-04",
+  "note": "Known device types. This is data, not code: pairing with a new kind of device means adding an entry here and re-uploading the filesystem image, with no firmware change. The interface reads this file to identify a paired device, to decide which card to draw for it, and to offer the right actions when building an automation.",
+  "families": {
+    "slwf12": {
+      "label": "Air conditioner bridge",
+      "capabilities": [
+        "climate"
+      ],
+      "card": "climate",
+      "info": "protocol",
+      "api": {
+        "status": "/api/status",
+        "state": "/api/state",
+        "command": "/api/state"
+      },
+      "auth": "bearer",
+      "identify": {
+        "path": "/api/status",
+        "key": "device.type",
+        "equals": "slwf12"
+      },
+      "actions": [
+        {
+          "id": "power",
+          "label": "Power",
+          "type": "boolean"
+        },
+        {
+          "id": "mode",
+          "label": "Mode",
+          "type": "enum",
+          "values": [
+            "auto",
+            "cool",
+            "heat",
+            "dry",
+            "fan_only"
+          ]
+        },
+        {
+          "id": "temp",
+          "label": "Temperature",
+          "type": "number",
+          "unit": "°C",
+          "min": 16,
+          "max": 30,
+          "step": 0.5
+        },
+        {
+          "id": "fan",
+          "label": "Fan speed",
+          "type": "enum",
+          "values": [
+            "auto",
+            "min",
+            "low",
+            "medium",
+            "medium_high",
+            "high",
+            "max"
+          ]
+        },
+        {
+          "id": "swingv",
+          "label": "Swing",
+          "type": "enum",
+          "values": [
+            "off",
+            "auto",
+            "highest",
+            "high",
+            "middle",
+            "low",
+            "lowest"
+          ]
+        },
+        {
+          "id": "scene",
+          "label": "Apply scene",
+          "type": "scene"
+        }
+      ],
+      "conditions": [
+        {
+          "id": "power",
+          "label": "Power",
+          "type": "boolean"
+        },
+        {
+          "id": "mode",
+          "label": "Mode",
+          "type": "enum",
+          "values": [
+            "auto",
+            "cool",
+            "heat",
+            "dry",
+            "fan_only"
+          ]
+        },
+        {
+          "id": "temp",
+          "label": "Temperature",
+          "type": "number",
+          "unit": "°C"
+        }
+      ],
+      "commandStyle": "json"
+    },
+    "wled": {
+      "label": "WLED lighting controller",
+      "capabilities": [
+        "light"
+      ],
+      "card": "light",
+      "api": {
+        "status": "/json/info",
+        "state": "/json/state",
+        "command": "/json/state"
+      },
+      "auth": "none",
+      "identify": {
+        "path": "/json/info",
+        "key": "brand",
+        "equals": "WLED"
+      },
+      "actions": [
+        {
+          "id": "on",
+          "label": "Power",
+          "type": "boolean",
+          "path": "on"
+        },
+        {
+          "id": "bri",
+          "label": "Brightness",
+          "type": "number",
+          "path": "bri",
+          "min": 0,
+          "max": 255,
+          "step": 5
+        },
+        {
+          "id": "color",
+          "label": "Colour",
+          "type": "color",
+          "path": "seg.0.col.0",
+          "writeOnly": true
+        },
+        {
+          "id": "fx",
+          "label": "Effect number",
+          "type": "number",
+          "path": "seg.0.fx",
+          "min": 0,
+          "max": 200,
+          "step": 1,
+          "writeOnly": true
+        },
+        {
+          "id": "sx",
+          "label": "Effect speed",
+          "type": "number",
+          "path": "seg.0.sx",
+          "min": 0,
+          "max": 255,
+          "step": 5,
+          "writeOnly": true
+        },
+        {
+          "id": "ps",
+          "label": "Preset",
+          "type": "number",
+          "path": "ps",
+          "min": 1,
+          "max": 250,
+          "step": 1
+        }
+      ],
+      "conditions": [
+        {
+          "id": "on",
+          "label": "Power",
+          "type": "boolean",
+          "path": "on"
+        },
+        {
+          "id": "bri",
+          "label": "Brightness",
+          "type": "number",
+          "path": "bri"
+        }
+      ],
+      "commandStyle": "json"
+    },
+    "esphome_climate": {
+      "label": "ESPHome air-conditioner controller",
+      "capabilities": [
+        "climate"
+      ],
+      "card": "climate",
+      "api": {
+        "status": "/climate/{entity}",
+        "state": "/climate/{entity}",
+        "command": "/climate/{entity}/set"
+      },
+      "commandStyle": "query",
+      "auth": "none",
+      "needsEntity": true,
+      "entityHint": "air_conditioner",
+      "identify": {
+        "path": "/climate/{entity}",
+        "key": "id",
+        "startsWith": "climate-"
+      },
+      "climate": {
+        "power": {
+          "offValue": "OFF",
+          "onFallback": "COOL"
+        },
+        "mode": {
+          "field": "mode",
+          "values": {
+            "off": "OFF",
+            "cool": "COOL",
+            "heat": "HEAT",
+            "dry": "DRY",
+            "fan_only": "FAN_ONLY",
+            "auto": "HEAT_COOL"
+          }
+        },
+        "temp": {
+          "field": "target_temperature"
+        },
+        "fan": {
+          "field": "fan_mode",
+          "values": {
+            "auto": "AUTO",
+            "min": "SILENT",
+            "low": "LOW",
+            "medium": "MEDIUM",
+            "high": "HIGH",
+            "max": "TURBO"
+          }
+        },
+        "swingv": {
+          "field": "swing_mode",
+          "values": {
+            "off": "OFF",
+            "auto": "VERTICAL"
+          }
+        },
+        "current": {
+          "field": "current_temperature"
+        }
+      },
+      "visual": {
+        "min": 17,
+        "max": 30,
+        "step": 0.5
+      },
+      "actions": [
+        {
+          "id": "mode",
+          "label": "Mode",
+          "type": "enum",
+          "path": "mode",
+          "values": [
+            "OFF",
+            "COOL",
+            "HEAT",
+            "DRY",
+            "FAN_ONLY",
+            "HEAT_COOL"
+          ]
+        },
+        {
+          "id": "temp",
+          "label": "Temperature",
+          "type": "number",
+          "path": "target_temperature",
+          "unit": "°C",
+          "min": 17,
+          "max": 30,
+          "step": 0.5
+        },
+        {
+          "id": "fan_mode",
+          "label": "Fan speed",
+          "type": "enum",
+          "path": "fan_mode",
+          "values": [
+            "AUTO",
+            "LOW",
+            "MEDIUM",
+            "HIGH",
+            "SILENT",
+            "TURBO"
+          ]
+        },
+        {
+          "id": "swing_mode",
+          "label": "Swing",
+          "type": "enum",
+          "path": "swing_mode",
+          "values": [
+            "OFF",
+            "VERTICAL",
+            "HORIZONTAL",
+            "BOTH"
+          ]
+        },
+        {
+          "id": "preset",
+          "label": "Preset",
+          "type": "enum",
+          "path": "preset",
+          "values": [
+            "NONE",
+            "ECO",
+            "BOOST",
+            "SLEEP",
+            "FREEZE_PROTECTION"
+          ]
+        }
+      ],
+      "conditions": [
+        {
+          "id": "mode",
+          "label": "Mode",
+          "type": "enum",
+          "values": [
+            "OFF",
+            "COOL",
+            "HEAT",
+            "DRY",
+            "FAN_ONLY",
+            "HEAT_COOL"
+          ]
+        },
+        {
+          "id": "target_temperature",
+          "label": "Target temperature",
+          "type": "number"
+        },
+        {
+          "id": "current_temperature",
+          "label": "Room temperature",
+          "type": "number"
+        }
+      ],
+      "entityLabel": "Entity id",
+      "entityPlaceholder": "air_conditioner"
+    },
+    "esphome_hdmi": {
+      "label": "ESPHome HDMI-CEC controller",
+      "capabilities": [
+        "remote"
+      ],
+      "card": "generic",
+      "api": {
+        "status": "/button/turn_everything_on",
+        "state": "/button/turn_everything_on",
+        "command": ""
+      },
+      "commandStyle": "query",
+      "auth": "none",
+      "needsEntity": false,
+      "identify": {
+        "path": "/button/turn_everything_on",
+        "key": "id",
+        "startsWith": "button-"
+      },
+      "actions": [
+        {
+          "id": "everything_on",
+          "label": "Turn everything on",
+          "type": "button",
+          "endpoint": "/button/turn_everything_on/press"
+        },
+        {
+          "id": "everything_off",
+          "label": "Turn everything off",
+          "type": "button",
+          "endpoint": "/button/turn_everything_off/press"
+        },
+        {
+          "id": "active_source",
+          "label": "Make active source",
+          "type": "button",
+          "endpoint": "/button/turn_active_source/press"
+        },
+        {
+          "id": "mute",
+          "label": "Mute",
+          "type": "button",
+          "endpoint": "/button/mute/press"
+        },
+        {
+          "id": "volume_down",
+          "label": "Volume down",
+          "type": "button",
+          "endpoint": "/button/volume_down/press"
+        },
+        {
+          "id": "volume_up",
+          "label": "Volume up",
+          "type": "button",
+          "endpoint": "/button/volume_up/press"
+        }
+      ],
+      "conditions": [],
+      "entityLabel": "Entity id",
+      "entityPlaceholder": "hdmi_control"
+    },
+    "clock": {
+      "label": "Time of day",
+      "capabilities": [],
+      "card": "none",
+      "conditions": [
+        {
+          "id": "minutes",
+          "label": "Time of day",
+          "type": "time"
+        },
+        {
+          "id": "weekday",
+          "label": "Day of week",
+          "type": "enum",
+          "values": [
+            "mon",
+            "tue",
+            "wed",
+            "thu",
+            "fri",
+            "sat",
+            "sun"
+          ]
+        },
+        {
+          "id": "sun",
+          "label": "Sun",
+          "type": "enum",
+          "values": [
+            "up",
+            "down"
+          ]
+        },
+        {
+          "id": "to_sunset",
+          "label": "Minutes until sunset",
+          "type": "number",
+          "min": -720,
+          "max": 720,
+          "step": 5
+        },
+        {
+          "id": "to_sunrise",
+          "label": "Minutes until sunrise",
+          "type": "number",
+          "min": -720,
+          "max": 720,
+          "step": 5
+        }
+      ],
+      "actions": []
+    },
+    "wol": {
+      "label": "Wake-on-LAN",
+      "capabilities": [],
+      "card": "generic",
+      "transport": "wol",
+      "needsEntity": true,
+      "entityLabel": "MAC address",
+      "entityPlaceholder": "a1:b2:c3:d4:e5:f6",
+      "defaultHost": "255.255.255.255",
+      "defaultPort": 9,
+      "actions": [
+        {
+          "id": "wake",
+          "label": "Wake",
+          "type": "button"
+        }
+      ],
+      "conditions": []
+    },
+    "ha_sensor": {
+      "label": "Home Assistant sensor",
+      "capabilities": [],
+      "card": "readings",
+      "transport": "http",
+      "api": {
+        "status": "/api/states/{entity}",
+        "state": "/api/states/{entity}"
+      },
+      "auth": "bearer",
+      "needsEntity": true,
+      "entityLabel": "Entity id",
+      "entityPlaceholder": "sensor.outside_temperature",
+      "defaultPort": 8123,
+      "conditions": [
+        {
+          "id": "state",
+          "label": "Value",
+          "type": "number"
+        }
+      ],
+      "actions": []
+    },
+    "json_sensor": {
+      "label": "JSON value",
+      "capabilities": [],
+      "card": "readings",
+      "transport": "http",
+      "api": {
+        "status": "{entity}",
+        "state": "{entity}"
+      },
+      "auth": "none",
+      "needsEntity": true,
+      "entityLabel": "Path",
+      "entityPlaceholder": "/weather/now.json",
+      "conditions": [
+        {
+          "id": "temperature",
+          "label": "temperature",
+          "type": "number"
+        },
+        {
+          "id": "temp",
+          "label": "temp",
+          "type": "number"
+        },
+        {
+          "id": "value",
+          "label": "value",
+          "type": "number"
+        },
+        {
+          "id": "humidity",
+          "label": "humidity",
+          "type": "number"
+        }
+      ],
+      "actions": []
+    }
+  },
+  "types": [
+    {
+      "id": "slwf12",
+      "name": "SLWF-12",
+      "family": "slwf12",
+      "icon": "climate",
+      "description": "Infrared air-conditioner bridge"
+    },
+    {
+      "id": "slwf03",
+      "name": "SLWF-03",
+      "family": "wled",
+      "icon": "light",
+      "description": "WLED lighting controller"
+    },
+    {
+      "id": "slwf09",
+      "name": "SLWF-09",
+      "family": "wled",
+      "icon": "light",
+      "description": "WLED lighting controller"
+    },
+    {
+      "id": "slwf11",
+      "name": "SLWF-11",
+      "family": "wled",
+      "icon": "light",
+      "description": "WLED lighting controller"
+    },
+    {
+      "id": "slwf01",
+      "name": "SLWF-01",
+      "family": "esphome_climate",
+      "icon": "climate",
+      "description": "ESPHome air-conditioner controller"
+    },
+    {
+      "id": "slwf08",
+      "name": "SLWF-08",
+      "family": "esphome_hdmi",
+      "icon": "display",
+      "description": "ESPHome HDMI-CEC controller"
+    },
+    {
+      "id": "clock",
+      "name": "Time",
+      "family": "clock",
+      "icon": "clock",
+      "hidden": true
+    },
+    {
+      "id": "wol",
+      "name": "Wake-on-LAN",
+      "family": "wol",
+      "icon": "display"
+    },
+    {
+      "id": "ha_sensor",
+      "name": "Home Assistant sensor",
+      "family": "ha_sensor",
+      "icon": "thermometer"
+    },
+    {
+      "id": "json_sensor",
+      "name": "JSON value (any URL)",
+      "family": "json_sensor",
+      "icon": "thermometer"
+    }
+  ]
+}

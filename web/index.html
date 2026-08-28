@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111318">
+<title>SLWF-12</title>
+<link rel="stylesheet" href="/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>❄</text></svg>">
+<script>
+// Runs before first paint so the page never flashes the wrong theme. Resolves
+// the stored choice ("auto" by default) against the system setting and writes a
+// concrete data-theme, which is the only thing the stylesheet looks at.
+(function () {
+  var choice = localStorage.getItem('slwf12.theme') || 'auto';
+  var dark = choice === 'dark' ||
+             (choice === 'auto' &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.documentElement.dataset.themeChoice = choice;
+})();
+</script>
+</head>
+<body>
+
+<div id="boot" class="boot"><div class="spinner"></div></div>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="dot" id="link-dot" title="connection"></span>
+    <strong id="device-name">SLWF-12</strong>
+  </div>
+  <div class="topbar-actions">
+    <!-- The device's clock, not the browser's. app.js ticks it locally between
+         status refreshes so it reads like a clock rather than a poll. -->
+    <span class="clock-now unset" id="clock-now">--:--</span>
+    <button class="theme-toggle" id="theme-toggle" aria-label="Theme" title="Theme">
+      <svg data-icon="auto" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></svg>
+      <svg data-icon="light" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      <svg data-icon="dark" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>
+    </button>
+    <!-- Not a dropdown: picking a language can mean fetching one, which
+         needs explaining somewhere with room to explain it. -->
+    <button class="lang-button" id="lang-button" data-goto="localisation"
+            aria-label="Language">EN</button>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button class="tab" data-view="control"     data-i18n="nav.control">Control</button>
+  <button class="tab" data-view="automations" data-i18n="nav.automations">Automations</button>
+  <button class="tab" data-view="settings"    data-i18n="nav.settings">Settings</button>
+</nav>
+
+<main>
+
+<!-- Section menu. Built by renderRail() from the table in app.js, so a page's
+     icon, label and destination are written once rather than in two places
+     that can drift apart. -->
+<nav class="rail" id="rail" hidden></nav>
+
+
+<!-- ══════════════════════════════════════ CONTROL ═══════════════════════ -->
+<section class="view" id="view-control">
+
+  <div class="device-tabs" id="device-tabs" hidden></div>
+
+  <!-- Device cards are built by createClimateCard()/createGenericCard() in
+       app.js, one instance per device, so the same component serves the local
+       air conditioner and every paired one. Nothing is hard-coded here. -->
+  <div id="device-cards"></div>
+
+  <div class="card" id="not-configured" hidden>
+    <h2 data-i18n="control.not_configured_title">No air conditioner yet</h2>
+    <p class="muted" data-i18n="control.not_configured_body">
+      The bridge does not know how to talk to your unit. Teach it with your
+      remote — it usually takes one button press.</p>
+    <button class="primary" data-goto="teach" data-i18n="control.teach_now">Teach it now</button>
+  </div>
+
+</section>
+
+<!-- ══════════════════════════════════════ TEACH ═════════════════════════ -->
+<section class="view" id="view-teach" hidden>
+  <div class="card">
+    <h3 data-i18n="teach.manual_title">Pick a protocol by hand</h3>
+    <p class="muted" data-i18n="teach.manual_body">
+      If you already know your unit's protocol, choose it here and skip
+      learning entirely.</p>
+    <div class="field-row">
+      <select id="protocol-select"></select>
+      <button class="ghost" id="protocol-test" data-i18n="teach.test">Test</button>
+      <button class="ghost" id="emitter-test" data-i18n="teach.emitter">Test the emitter</button>
+      <button class="primary" id="protocol-save" data-i18n="common.save">Save</button>
+    </div>
+    <div class="field-grid">
+      <label><span data-i18n="teach.brand">Brand</span><input id="ac-brand" type="text"></label>
+      <label><span data-i18n="teach.model">Model</span><input id="ac-model" type="text"></label>
+      <label><span data-i18n="teach.min_temp">Minimum °C</span><input id="ac-min" type="number" step="0.5"></label>
+      <label><span data-i18n="teach.max_temp">Maximum °C</span><input id="ac-max" type="number" step="0.5"></label>
+      <label><span data-i18n="teach.step">Step</span><input id="ac-step" type="number" step="0.5"></label>
+      <label><span data-i18n="teach.repeats">Repeats</span><input id="ac-repeats" type="number" min="0" max="10"></label>
+      <label><span data-i18n="teach.min_off">Minimum off time (s)</span><input id="ac-minoff" type="number" min="0" max="3600"></label>
+      <label><span data-i18n="teach.watts">Rated power (W)</span><input id="ac-watts" type="number" min="0" max="20000"></label>
+    </div>
+    <p class="muted small" data-i18n="teach.min_off_hint">
+      Minimum off time protects the compressor: after the unit switches off, a
+      request to start it again waits out the remaining seconds instead of
+      short-cycling it. Rated power is only used for the energy estimate — leave
+      it at 0 if you do not know it.</p>
+  </div>
+
+  <div class="card">
+    <h2 data-i18n="teach.title">Teach the bridge your remote</h2>
+    <p class="muted" data-i18n="teach.intro">
+      Start with <em>Identify</em>. One button press is usually enough: if the
+      protocol is recognised, the bridge can then build every command by
+      itself, including combinations you never demonstrated.</p>
+
+    <div class="wizard" id="wizard">
+      <div class="wizard-phase"><span class="pill" id="wiz-phase">idle</span>
+        <span id="wiz-progress" class="muted"></span></div>
+      <p class="wizard-prompt" id="wiz-prompt"></p>
+      <p class="wizard-target" id="wiz-target"></p>
+      <div class="wizard-actions" id="wiz-actions"></div>
+    </div>
+
+    <div class="btn-row" id="teach-start-row">
+      <button class="primary" data-learn="identify" data-i18n="teach.identify">Identify my remote</button>
+      <button class="ghost"   data-learn="sweep"    data-i18n="teach.sweep">Try every protocol</button>
+      <button class="ghost"   data-learn="record"   data-i18n="teach.record">Record raw codes</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 data-i18n="teach.heard_title">What the bridge is hearing</h3>
+    <dl class="kv" id="ir-last"></dl>
+  </div>
+
+  <div class="card">
+    <h3 data-i18n="remotes.title">Use another remote</h3>
+    <p class="muted" data-i18n="remotes.body">
+      The bridge hears every remote in the room, not just the air
+      conditioner's. Pick a button you never use on your TV handset — a colour
+      key, teletext, a spare input — and make it control the air conditioner.</p>
+    <div class="field-row">
+      <select id="remote-action"></select>
+      <select id="remote-scene" hidden></select>
+      <input id="remote-label" type="text" data-i18n-placeholder="remotes.label" placeholder="What to call it">
+      <button class="primary" id="remote-learn" data-i18n="remotes.learn">Learn a button</button>
+    </div>
+    <div id="remote-list" class="list"></div>
+    <div class="btn-row">
+      <button class="danger ghost" id="remotes-clear" data-i18n="remotes.clear">Forget all buttons</button>
+    </div>
+    <p class="muted small" data-i18n="remotes.warning">
+      Do not use a button from the air conditioner's own remote — the bridge
+      needs those to follow what the unit is doing, and it will tell you if you
+      try.</p>
+  </div>
+
+  <div class="card">
+    <h3 data-i18n="teach.db_title">Shared device database</h3>
+    <p class="muted" data-i18n="teach.db_body">
+      Profiles contributed by other owners. Importing one configures the bridge
+      without any learning at all.</p>
+    <div class="field-row">
+      <input id="db-search" type="search" data-i18n-placeholder="teach.db_search" placeholder="Search brand or model">
+      <button class="ghost" id="db-refresh" data-i18n="teach.db_load">Load</button>
+    </div>
+    <div id="db-results" class="list"></div>
+    <hr>
+    <h4 data-i18n="teach.submit_title">Share your unit</h4>
+    <p class="muted" data-i18n="teach.submit_body">
+      Once your AC works, export the profile and open a pull request so the
+      next owner of the same model does not have to teach anything.</p>
+    <div class="btn-row">
+      <button class="ghost" id="profile-export" data-i18n="teach.export">Download profile</button>
+      <button class="ghost" id="profile-submit" data-i18n="teach.submit">Submit to the database</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 data-i18n="teach.codes_title">Learned codes</h3>
+    <div id="codes-list" class="list"></div>
+    <div class="btn-row">
+      <button class="danger ghost" id="codes-clear" data-i18n="teach.codes_clear">Erase all codes</button>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════ CLIENTS ═══════════════════════ -->
+<section class="view" id="view-clients" hidden>
+
+  <div class="card">
+    <h2 data-i18n="clients.title">Who may control it, and who is told</h2>
+    <p class="muted" data-i18n="clients.body">
+      Every client speaks to the same internal API — most both send commands
+      and receive the state. Switching one off here blocks it without
+      disturbing the others.</p>
+    <div id="source-toggles" class="toggle-list"></div>
+  </div>
+
+  <div class="card">
+    <h3>MQTT &amp; Home Assistant</h3>
+    <label class="switch"><input type="checkbox" id="mqtt-enabled"><span data-i18n="common.enabled">Enabled</span></label>
+    <div class="field-grid">
+      <label><span data-i18n="mqtt.host">Broker host</span><input id="mqtt-host" type="text" placeholder="192.168.1.10"></label>
+      <label><span data-i18n="mqtt.port">Port</span><input id="mqtt-port" type="number"></label>
+      <label><span data-i18n="mqtt.user">Username</span><input id="mqtt-user" type="text" autocomplete="off"></label>
+      <label><span data-i18n="mqtt.pass">Password</span><input id="mqtt-pass" type="password" autocomplete="new-password"></label>
+      <label><span data-i18n="mqtt.base">Base topic</span><input id="mqtt-base" type="text"></label>
+      <label><span data-i18n="mqtt.prefix">Discovery prefix</span><input id="mqtt-prefix" type="text"></label>
+    </div>
+    <label class="switch"><input type="checkbox" id="mqtt-discovery"><span data-i18n="mqtt.discovery">Announce to Home Assistant</span></label>
+    <label class="switch"><input type="checkbox" id="mqtt-retain"><span data-i18n="mqtt.retain">Retain published state</span></label>
+    <label class="switch"><input type="checkbox" id="mqtt-homie"><span data-i18n="mqtt.homie">Also publish the Homie convention (openHAB, Domoticz)</span></label>
+    <div class="btn-row"><button class="primary" data-save="mqtt" data-i18n="common.save">Save</button></div>
+    <dl class="kv" id="mqtt-status"></dl>
+  </div>
+
+  <div class="card">
+    <h3 data-i18n="webhook.title">Webhook</h3>
+    <p class="muted small" data-i18n="webhook.body">
+      Sends the new state to a URL of yours every time the air conditioner
+      changes, whoever changed it. Anything that can receive a request can
+      follow along — Node-RED, a script, a logger.</p>
+    <label class="switch"><input type="checkbox" id="hook-enabled"><span data-i18n="common.enabled">Enabled</span></label>
+    <div class="field-grid">
+      <label><span>URL</span><input id="hook-url" type="text" placeholder="http://192.168.1.20:1880/ac"></label>
+      <label><span data-i18n="webhook.interval">Minimum gap (s)</span><input id="hook-interval" type="number" min="0" max="3600"></label>
+      <label><span data-i18n="webhook.header">Header name</span><input id="hook-header" type="text" placeholder="Authorization"></label>
+      <label><span data-i18n="webhook.value">Header value</span><input id="hook-value" type="password" autocomplete="new-password"></label>
+    </div>
+    <p class="muted small" data-i18n="webhook.http_only">
+      Plain http:// only — a second encrypted connection does not fit on this
+      device. Point it at something on your own network.</p>
+    <div class="btn-row">
+      <button class="ghost" id="hook-test" data-i18n="webhook.test">Send a test</button>
+      <button class="primary" data-save="webhook" data-i18n="common.save">Save</button>
+    </div>
+    <dl class="kv" id="hook-status"></dl>
+  </div>
+
+  <div class="card">
+    <h3 data-i18n="modbus.title">Modbus TCP</h3>
+    <p class="muted small" data-i18n="modbus.body">
+      For building-management systems and PLCs. Exposes the air conditioner as
+      plain holding registers.</p>
+    <label class="switch"><input type="checkbox" id="modbus-enabled"><span data-i18n="common.enabled">Enabled</span></label>
+    <div class="field-grid">
+      <label><span data-i18n="modbus.port">Port</span><input id="modbus-port" type="number" min="1" max="65535"></label>
+    </div>
+    <table class="regmap">
+      <thead><tr><th>#</th><th data-i18n="modbus.register">Register</th><th data-i18n="modbus.values">Values</th></tr></thead>
+      <tbody>
+        <tr><td>0</td><td data-i18n="modbus.power">Power</td><td>0 / 1</td></tr>
+        <tr><td>1</td><td data-i18n="modbus.mode">Mode</td><td>0 auto, 1 cool, 2 heat, 3 dry, 4 fan</td></tr>
+        <tr><td>2</td><td data-i18n="modbus.temp">Target temperature</td><td data-i18n="modbus.tenths">tenths of a degree (235 = 23.5)</td></tr>
+        <tr><td>3</td><td data-i18n="modbus.fan">Fan speed</td><td>0 auto … 6 max</td></tr>
+        <tr><td>4</td><td data-i18n="modbus.swing">Vertical swing</td><td>0 / 1</td></tr>
+        <tr><td>5</td><td data-i18n="modbus.command">Command</td><td data-i18n="modbus.resend">write 1 to resend</td></tr>
+        <tr><td>10–12</td><td data-i18n="modbus.counters">Revision, runtime hours, starts</td><td data-i18n="modbus.readonly">read only</td></tr>
+      </tbody>
+    </table>
+    <div class="btn-row"><button class="primary" data-save="modbus" data-i18n="common.save">Save</button></div>
+    <dl class="kv" id="modbus-status"></dl>
+  </div>
+
+  <div class="card">
+    <h3>Telegram</h3>
+    <label class="switch"><input type="checkbox" id="tg-enabled"><span data-i18n="common.enabled">Enabled</span></label>
+    <div class="field-grid">
+      <label><span data-i18n="telegram.token">Bot token</span><input id="tg-token" type="password" autocomplete="new-password" placeholder="123456:ABC-DEF..."></label>
+      <label><span data-i18n="telegram.poll">Poll interval (s)</span><input id="tg-poll" type="number" min="1" max="300"></label>
+    </div>
+    <label class="switch"><input type="checkbox" id="tg-notify"><span data-i18n="telegram.notify">Announce changes made elsewhere</span></label>
+    <label class="switch"><input type="checkbox" id="tg-open"><span data-i18n="telegram.open">Let the next person to message become the owner</span></label>
+    <div class="field-row">
+      <input id="tg-add-id" type="text" data-i18n-placeholder="telegram.chat_id" placeholder="Chat id">
+      <button class="ghost" id="tg-add" data-i18n="telegram.add">Authorise</button>
+    </div>
+    <div id="tg-allowed" class="list"></div>
+    <p class="muted small" data-i18n="telegram.hint">
+      Create a bot with @BotFather, paste its token here, then send /start to
+      your bot from the phone that should control the air conditioner.</p>
+    <div class="btn-row"><button class="primary" data-save="telegram" data-i18n="common.save">Save</button></div>
+    <dl class="kv" id="tg-status"></dl>
+  </div>
+
+  <div class="card">
+    <h3>UART</h3>
+    <label class="switch"><input type="checkbox" id="uart-enabled"><span data-i18n="common.enabled">Enabled</span></label>
+    <p class="muted small" data-i18n="uart.warning">
+      UART0 is shared with the serial console. Enabling this stops log output
+      on the port so the protocol framing stays clean.</p>
+    <div class="field-grid">
+      <label><span data-i18n="uart.baud">Baud rate</span><input id="uart-baud" type="number"></label>
+    </div>
+    <label class="switch"><input type="checkbox" id="uart-events"><span data-i18n="uart.events">Emit state changes as JSON lines</span></label>
+    <div class="btn-row"><button class="primary" data-save="uart" data-i18n="common.save">Save</button></div>
+  </div>
+
+  <div class="card">
+    <h3 data-i18n="other.title">Other ways in</h3>
+    <p class="muted small" data-i18n="other.body">
+      Endpoints for software that already speaks something else. Switched off
+      until you want them: a way in nobody uses is a door nobody asked for.</p>
+    <div class="toggle-list">
+      <label class="switch">
+        <input type="checkbox" id="compat-tasmota">
+        <span data-i18n="compat.tasmota">Tasmota commands</span>
+        <span class="tag">/cm?cmnd=</span>
+      </label>
+      <label class="switch">
+        <input type="checkbox" id="compat-metrics">
+        <span data-i18n="compat.metrics">Prometheus metrics</span>
+        <span class="tag">/api/metrics</span>
+      </label>
+    </div>
+    <div class="btn-row">
+      <button class="primary" data-save="compat" data-i18n="common.save">Save</button>
+    </div>
+    <dl class="kv" id="other-ways"></dl>
+  </div>
+
+</section>
+
+<!-- ══════════════════════════════════════ NETWORK ═══════════════════════ -->
+<section class="view" id="view-network" hidden>
+
+  <div class="card">
+    <h2 data-i18n="network.title">Wi-Fi</h2>
+    <dl class="kv" id="net-status"></dl>
+    <div class="btn-row">
+      <button class="ghost" id="wifi-scan" data-i18n="network.scan">Scan</button>
+    </div>
+    <div id="wifi-list" class="list"></div>
+    <div class="field-grid">
+      <label><span>SSID</span><input id="wifi-ssid" type="text" autocomplete="off"></label>
+      <label><span data-i18n="common.password">Password</span><input id="wifi-pass" type="password" autocomplete="new-password"></label>
+    </div>
+    <div class="btn-row"><button class="primary" id="wifi-connect" data-i18n="network.connect">Connect</button></div>
+  </div>
+
+  <div class="card">
+    <h3 data-i18n="network.advanced">Addressing</h3>
+    <div class="field-grid">
+      <label><span data-i18n="network.hostname">Hostname</span><input id="net-hostname" type="text"></label>
+    </div>
+    <label class="switch"><input type="checkbox" id="net-static"><span data-i18n="network.static">Use a static address</span></label>
+    <div class="field-grid" id="static-fields">
+      <label><span>IP</span><input id="net-ip" type="text"></label>
+      <label><span data-i18n="network.gateway">Gateway</span><input id="net-gw" type="text"></label>
+      <label><span data-i18n="network.mask">Netmask</span><input id="net-mask" type="text"></label>
+      <label><span>DNS</span><input id="net-dns" type="text"></label>
+    </div>
+    <div class="btn-row"><button class="primary" data-save="network" data-i18n="common.save">Save</button></div>
+  </div>
+
+  
+
+  
+
+</section>
+
+
+<!-- ══════════════════════════════════════ AUTOMATIONS ═══════════════════ -->
+<section class="view" id="view-automations" hidden>
+  <div class="card">
+    <h2 data-i18n="automations.title">Automations</h2>
+    <p class="muted" data-i18n="automations.body">
+      Rules that run on this device, whether or not anything is watching. Each
+      one says: if these things are true, then do these things.</p>
+    <div id="automation-list"></div>
+    <div class="btn-row">
+      <button class="ghost" id="automation-add" data-i18n="automations.add">Add a rule</button>
+      <button class="primary" id="automation-save" data-i18n="common.save">Save</button>
+    </div>
+  </div>
+
+</section>
+
+
+<!-- ══════════════════════════════════════ SCENES ════════════════════════ -->
+<section class="view" id="view-scenes" hidden>
+  <div class="card">
+    <h2 data-i18n="scenes.title">Scenes</h2>
+    <p class="muted" data-i18n="scenes.body">
+      One-tap presets. A scene only changes what you put in it, so a "Quiet"
+      scene can set just the fan speed and leave everything else alone. Scenes
+      appear on the control page, in Telegram, and as a dropdown in Home
+      Assistant.</p>
+    <div id="scene-list" class="list"></div>
+    <div class="btn-row">
+      <button class="ghost" id="scene-add" data-i18n="scenes.add">Add a scene</button>
+      <button class="ghost" id="scene-capture" data-i18n="scenes.capture">Capture what is set now</button>
+      <button class="primary" id="scene-save" data-i18n="common.save">Save</button>
+    </div>
+  </div>
+
+</section>
+
+
+<!-- ══════════════════════════════════════ SCHEDULES ═════════════════════ -->
+<section class="view" id="view-schedules" hidden>
+  <div class="card">
+    <h2 data-i18n="schedules.title">Schedules and timers</h2>
+    <p class="muted" id="clock-line"></p>
+    <div id="schedule-list" class="list"></div>
+    <div class="btn-row">
+      <button class="ghost" id="sched-add-daily" data-i18n="schedules.add_daily">Add a daily rule</button>
+      <button class="ghost" id="sched-add-timer" data-i18n="schedules.add_timer">Add a countdown</button>
+      <button class="primary" id="sched-save" data-i18n="common.save">Save</button>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════ DEVICES ═══════════════════════ -->
+<section class="view" id="view-devices" hidden>
+<div class="card">
+    <h3 data-i18n="devices.title">Other devices</h3>
+    <p class="muted small" data-i18n="devices.body">
+      Things this bridge reaches over the network rather than by infrared:
+      other SLWF units, WLED and ESPHome devices, a computer to wake, a sensor
+      to read. Once added they appear on the control page and can be used in
+      automations.</p>
+    <div id="device-list" class="list"></div>
+    <div class="field-row">
+      <input id="device-host" type="text" data-i18n-placeholder="devices.address" placeholder="Address or name">
+      <select id="device-type"></select>
+      <input id="device-name" type="text" data-i18n-placeholder="devices.name" placeholder="What to call it">
+      <!-- The one per-device string some families need: an ESPHome entity id,
+           a MAC address. Shown only when the chosen type asks for one. -->
+      <input id="device-entity" type="text" hidden>
+    </div>
+    <div class="field-row">
+      <input id="device-token" type="password" autocomplete="new-password" data-i18n-placeholder="devices.token" placeholder="API token, if it needs one">
+      <button class="ghost" id="device-add" data-i18n="devices.add">Add</button>
+    </div>
+    <div class="btn-row">
+      <button class="ghost" id="device-discover" data-i18n="devices.discover">Look for devices</button>
+      <button class="primary" id="device-save" data-i18n="common.save">Save</button>
+    </div>
+    <div id="device-candidates" class="list"></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════ SECURITY ══════════════════════ -->
+<section class="view" id="view-security" hidden>
+<div class="card">
+    <h3 data-i18n="security.title">Access control</h3>
+    <label class="switch"><input type="checkbox" id="auth-enabled"><span data-i18n="security.enabled">Require a password</span></label>
+    <div class="field-grid">
+      <label><span data-i18n="security.user">Username</span><input id="auth-user" type="text" autocomplete="username"></label>
+      <label><span data-i18n="common.password">Password</span><input id="auth-pass" type="password" autocomplete="new-password"></label>
+      <label><span data-i18n="security.token">API token</span><input id="auth-token" type="text" autocomplete="off"></label>
+      <label><span data-i18n="security.ap_pass">Setup AP password</span><input id="ap-pass" type="password" autocomplete="new-password"></label>
+    </div>
+    <p class="muted small" data-i18n="security.hint">
+      The token lets scripts and integrations call the API without a browser
+      login — send it as <code>Authorization: Bearer …</code>.</p>
+    <div class="btn-row">
+      <button class="ghost" id="auth-generate" data-i18n="security.generate">Generate token</button>
+      <button class="primary" data-save="auth" data-i18n="common.save">Save</button>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════ SYSTEM ════════════════════════ -->
+<!-- ═══════════════════════════════════ SYSTEM ════════════════════════════════════════════════════════ -->
+<section class="view" id="view-system" hidden>
+
+  <div class="card">
+    <h2 data-i18n="system.title">Device</h2>
+    <div class="field-grid">
+      <label><span data-i18n="system.name">Friendly name</span><input id="dev-name" type="text"></label>
+    </div>
+    <div class="btn-row"><button class="primary" data-save="device" data-i18n="common.save">Save</button></div>
+    <dl class="kv" id="sys-info"></dl>
+  </div>
+
+  <div class="card">
+    <h3 data-i18n="stats.title">Usage</h3>
+    <div class="stat-row" id="stat-tiles"></div>
+    <p class="muted small" id="energy-note" hidden data-i18n="stats.energy_note">
+      Energy is running time multiplied by the rated power you entered — good
+      enough to spot trends, but it is an estimate, not a meter.</p>
+    <div class="btn-row">
+      <button class="danger ghost" id="stats-reset" data-i18n="stats.reset">Reset counters</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 data-i18n="system.pins">Pin assignment</h3>
+    <p class="muted small" data-i18n="system.pins_hint">
+      Defaults follow the SLWF-12 r1.0 schematic: the receiver module (J2) sits
+      on GPIO4 and the emitter driver (Q3) on GPIO16. Change these only if your
+      board differs.</p>
+    <div class="field-grid">
+      <label><span data-i18n="system.pin_rx">IR receive</span><input id="pin-rx" type="number" min="-1" max="16"></label>
+      <label><span data-i18n="system.pin_tx">IR transmit</span><input id="pin-tx" type="number" min="-1" max="16"></label>
+      <label><span data-i18n="system.pin_btn">Button</span><input id="pin-btn" type="number" min="-1" max="16"></label>
+      <label><span data-i18n="system.carrier">Carrier (kHz)</span><input id="pin-khz" type="number" min="30" max="60"></label>
+    </div>
+    <label class="switch"><input type="checkbox" id="pin-inverted"><span data-i18n="system.inverted">Transmitter is active-low</span></label>
+    <div class="btn-row"><button class="primary" data-save="pins" data-i18n="common.save">Save</button></div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════ LANGUAGE ═════════════════════════ -->
+<section class="view" id="view-localisation" hidden>
+
+  <div class="card">
+    <h2 data-i18n="lang.title">Language</h2>
+    <p class="muted" data-i18n="lang.body">
+      English is built into the device and always available. Other languages
+      are files that can be added — once added, a language stays on the device
+      and works with no internet at all.</p>
+    <div id="lang-installed" class="list"></div>
+  </div>
+
+  <div class="card">
+    <h3 data-i18n="lang.more_title">Add a language</h3>
+    <p class="muted small" data-i18n="lang.more_body">
+      The device never contacts anything on its own. If you ask, <em>this
+      browser</em> — not the device — will fetch the list of available
+      languages from the project's page on GitHub, and then the one you pick.
+      The pack is sent to the device over your own network and kept there.</p>
+    <div id="lang-available" class="list"></div>
+    <div class="btn-row">
+      <button class="primary" id="lang-look" data-i18n="lang.look">Look for languages</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 data-i18n="lang.file_title">Install from a file</h3>
+    <p class="muted small" data-i18n="lang.file_body">
+      For a browser that cannot reach GitHub either — on the device's own
+      setup network, for instance. Download the pack on any machine and choose
+      the file here. Nothing leaves your network.</p>
+    <div class="btn-row">
+      <button class="ghost" id="lang-upload" data-i18n="lang.from_file">Choose a file</button>
+      <input type="file" id="lang-file" accept=".json,application/json" hidden>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 data-i18n="locale.formats">Units and formats</h3>
+    <p class="muted small" data-i18n="locale.formats_body">
+      How this device writes things down, and which unit it speaks to the air
+      conditioner in. The unit is not only a display choice: it goes out in the
+      infrared frame, so the unit's own display follows it.</p>
+    <div class="field-grid">
+      <label><span data-i18n="locale.unit">Temperature</span>
+        <select id="fmt-unit">
+          <option value="c">°C — Celsius</option>
+          <option value="f">°F — Fahrenheit</option>
+        </select></label>
+      <label><span data-i18n="locale.clock">Clock</span>
+        <select id="fmt-clock">
+          <option value="24">14:30</option>
+          <option value="12">2:30 pm</option>
+        </select></label>
+      <label><span data-i18n="locale.date">Date</span>
+        <select id="fmt-date">
+          <option value="iso">2026-08-05</option>
+          <option value="dmy">05/08/2026</option>
+          <option value="mdy">08/05/2026</option>
+        </select></label>
+      <label><span data-i18n="locale.week">Week starts</span>
+        <select id="fmt-week">
+          <option value="1" data-i18n="day.mon">Monday</option>
+          <option value="0" data-i18n="day.sun">Sunday</option>
+        </select></label>
+    </div>
+    <div class="btn-row">
+      <button class="primary" data-save="locale" data-i18n="common.save">Save</button>
+    </div>
+  </div>
+
+</section>
+
+<!-- ═══════════════════════════════════ CLOCK ═════════════════════════════════════════════════════════ -->
+<section class="view" id="view-time" hidden>
+
+  <div class="card">
+    <h2 data-i18n="clock.now_title">Device time</h2>
+    <p class="muted" data-i18n="clock.now_body">
+      Schedules, timers and time-based automations all read this clock. The
+      board has no battery, so it starts each time from nothing and asks a time
+      server on the internet.</p>
+    <dl class="kv" id="clock-info"></dl>
+  </div>
+
+  <div class="card">
+    <h3 data-i18n="clock.zone_title">Timezone</h3>
+    <p class="muted small" data-i18n="clock.zone_body">
+      Sets what the device calls 8 o'clock, including when summer time starts
+      and ends. Worth getting right even without a time server.</p>
+    <div class="field-grid">
+      <label><span data-i18n="clock.zone_pick">Region</span><select id="tz-pick"></select></label>
+      <label><span data-i18n="system.tz">POSIX TZ string</span><input id="ntp-tz" type="text" placeholder="CET-1CEST,M3.5.0,M10.5.0/3"></label>
+    </div>
+    <div class="btn-row"><button class="primary" data-save="time" data-i18n="common.save">Save</button></div>
+  </div>
+
+  <div class="card">
+    <h3 data-i18n="clock.geo_title">Location</h3>
+    <p class="muted small" data-i18n="clock.geo_body">
+      Only used to work out sunrise and sunset, on the device and with no
+      network at all. Rules can then say "half an hour before sunset", which
+      keeps meaning the same thing all year — a fixed hour does not. Leave it
+      blank and the sun is simply not mentioned.</p>
+    <div class="field-grid">
+      <label><span data-i18n="clock.lat">Latitude</span><input id="geo-lat" type="number" step="0.0001" min="-90" max="90" placeholder="52.5200"></label>
+      <label><span data-i18n="clock.lon">Longitude</span><input id="geo-lon" type="number" step="0.0001" min="-180" max="180" placeholder="13.4050"></label>
+    </div>
+    <div class="btn-row">
+      <button class="ghost" id="geo-locate" data-i18n="clock.locate">Use this device's location</button>
+      <button class="primary" data-save="time" data-i18n="common.save">Save</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 data-i18n="clock.ntp_title">Time server</h3>
+    <div class="field-grid">
+      <label><span data-i18n="system.ntp">NTP server</span><input id="ntp-server" type="text"></label>
+    </div>
+    <div class="btn-row"><button class="primary" data-save="time" data-i18n="common.save">Save</button></div>
+  </div>
+
+  <div class="card">
+    <h3 data-i18n="clock.manual_title">Set the time by hand</h3>
+    <p class="muted small" data-i18n="clock.manual_body">
+      For a device with no way out to the internet. The time you set holds
+      until the device restarts — there is no battery to keep it — and a time
+      server, if one ever answers, takes over.</p>
+    <div class="field-row">
+      <input id="clock-manual" type="datetime-local" step="1">
+      <button class="ghost" id="clock-from-browser" data-i18n="clock.from_browser">Use this computer's clock</button>
+      <button class="primary" id="clock-apply" data-i18n="clock.apply">Set</button>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════ FIRMWARE UPDATE ═══════════════════════════════════════════════ -->
+<section class="view" id="view-firmware" hidden>
+
+  <div class="card">
+    <h3 data-i18n="system.update">Firmware update</h3>
+    <dl class="kv" id="ota-info"></dl>
+    <input type="file" id="ota-file" accept=".bin">
+    <div class="progress" id="ota-progress" hidden><div></div></div>
+    <div class="btn-row">
+      <button class="primary" id="ota-upload" data-i18n="system.upload">Upload</button>
+      <button class="ghost" id="ota-check" data-i18n="system.check">Check for releases</button>
+    </div>
+    <p class="muted small" data-i18n="system.update_hint">
+      Upload <code>firmware.bin</code> to update the program, or
+      <code>littlefs.bin</code> to update this interface.</p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════ BACKUP AND RESET ══════════════════════════════════════════════ -->
+<section class="view" id="view-backup" hidden>
+
+  <div class="card">
+    <h3 data-i18n="system.backup">Backup</h3>
+    <div class="btn-row">
+      <button class="ghost" id="backup-download" data-i18n="system.backup_download">Download settings</button>
+      <button class="ghost" id="backup-restore" data-i18n="system.backup_restore">Restore from file</button>
+      <input type="file" id="backup-file" accept=".json" hidden>
+    </div>
+  </div>
+
+  <div class="card danger-zone">
+    <h3 data-i18n="system.danger">Danger zone</h3>
+    <div class="btn-row">
+      <button class="ghost" id="restart-btn" data-i18n="system.restart">Restart</button>
+      <button class="danger" id="factory-btn" data-i18n="system.factory">Factory reset</button>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════ LOG ═══════════════════════════════════════════════════════════ -->
+<section class="view" id="view-logs" hidden>
+
+  <div class="card">
+    <h3 data-i18n="system.log">Log</h3>
+    <pre class="log" id="log-view"></pre>
+    <div class="btn-row">
+      <label class="switch"><input type="checkbox" id="log-follow" checked><span data-i18n="system.follow">Follow</span></label>
+      <button class="ghost" id="log-clear" data-i18n="system.log_clear">Clear</button>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- Filled by renderFooter(). On every page, because "what is actually on this
+     device" is the first thing anyone is asked for when something misbehaves. -->
+<footer class="footer" id="footer" hidden></footer>
+
+<div id="toasts" class="toasts"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
